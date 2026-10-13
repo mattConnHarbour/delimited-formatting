@@ -2,7 +2,7 @@ import { expect, test } from "vitest";
 import {
   readDelimiterRanges,
   insertDelimiterText,
-} from "../src/delimiter-ranges";
+} from "../src/formatting/internal/delimiter-ranges";
 
 function body(...texts: string[]) {
   return texts.map((text, index) => ({

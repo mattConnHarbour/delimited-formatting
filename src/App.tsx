@@ -1,11 +1,13 @@
-import { useEffect, useRef, useState } from "react";
+import { useRef, useState } from "react";
 import { SuperDocEditor, type SuperDocRef } from "@superdoc/react";
 import "@superdoc/react/style.css";
-import { enforceSdtUnderline } from "./sdt-underline";
 import {
-  installFormattingReview,
-  type FormattingScope,
-} from "./formatting-review";
+  useSDTFormatting,
+  useDocumentFormatting,
+  useDelimitedFormatting,
+} from "./formatting";
+
+type FormattingScope = "sdts" | "all" | "delimiters" | "none";
 
 function reportDocumentError({ error }: { error: unknown }) {
   console.error("SuperDoc could not open the document.", error);
@@ -14,85 +16,47 @@ function reportDocumentError({ error }: { error: unknown }) {
 export default function App() {
   const editorRef = useRef<SuperDocRef>(null);
   const mainRef = useRef<HTMLElement>(null);
-  const reviewController = useRef<ReturnType<
-    typeof installFormattingReview
-  > | null>(null);
   const exportingRef = useRef(false);
   const addingRef = useRef(false);
-  const underlineTask = useRef<Promise<void> | null>(null);
-  const underlinePending = useRef(false);
   const [ready, setReady] = useState(false);
   const [exporting, setExporting] = useState(false);
   const [adding, setAdding] = useState(false);
   const [changingScope, setChangingScope] = useState(false);
   const [formattingScope, setFormattingScope] =
     useState<FormattingScope>("none");
-  const formattingScopeRef = useRef<FormattingScope>("none");
   const [sdtError, setSdtError] = useState<string | null>(null);
   const [sdtStatus, setSdtStatus] = useState<string | null>(null);
-  const [underlineError, setUnderlineError] = useState<string | null>(null);
-
-  useEffect(() => {
-    if (formattingScope === "none" || !mainRef.current) return;
-    const controller = installFormattingReview(
-      mainRef.current,
-      () => editorRef.current?.getInstance() ?? null,
-      (error) => {
-        setSdtError(
-          error instanceof Error
-            ? error.message
-            : "The review edit could not be applied.",
-        );
-      },
-      formattingScope,
-      () => setSdtError(null),
-    );
-    reviewController.current = controller;
-    return () => {
-      controller.destroy();
-      reviewController.current = null;
-    };
-  }, [formattingScope]);
-
-  function enforceUnderline(): Promise<void> {
-    underlinePending.current = true;
-    if (underlineTask.current) return underlineTask.current;
-    underlineTask.current = (async () => {
-      while (underlinePending.current) {
-        underlinePending.current = false;
-        const instance = editorRef.current?.getInstance();
-        if (
-          instance &&
-          (formattingScopeRef.current === "sdts" ||
-            formattingScopeRef.current === "all")
-        )
-          await enforceSdtUnderline(instance);
-      }
-      setUnderlineError(null);
-    })().finally(() => {
-      underlineTask.current = null;
-    });
-    return underlineTask.current;
-  }
+  const options = { editorRef, containerRef: mainRef, ready };
+  const sdtFormatting = useSDTFormatting({
+    ...options,
+    enabled: formattingScope === "sdts",
+  });
+  const documentFormatting = useDocumentFormatting({
+    ...options,
+    enabled: formattingScope === "all",
+  });
+  const delimitedFormatting = useDelimitedFormatting({
+    ...options,
+    enabled: formattingScope === "delimiters",
+  });
+  const formatting =
+    formattingScope === "sdts"
+      ? sdtFormatting
+      : formattingScope === "all"
+        ? documentFormatting
+        : formattingScope === "delimiters"
+          ? delimitedFormatting
+          : null;
 
   function onDocumentUpdate() {
-    void enforceUnderline().catch((error: unknown) => {
-      setUnderlineError(
-        error instanceof Error
-          ? error.message
-          : "Mandatory SDT underline could not be applied.",
-      );
-    });
+    formatting?.onEditorUpdate();
   }
 
   async function selectFormattingScope(scope: FormattingScope) {
     setChangingScope(true);
     try {
-      await reviewController.current?.flush();
-      await underlineTask.current;
-      formattingScopeRef.current = scope;
+      await formatting?.flush();
       setSdtError(null);
-      await enforceUnderline();
       setFormattingScope(scope);
     } catch (error) {
       setSdtError(
@@ -116,8 +80,8 @@ export default function App() {
       const documentApi = instance?.activeEditor?.doc;
       if (!instance || !documentApi)
         throw new Error("The document is not ready.");
-      await reviewController.current?.flush();
-      reviewController.current?.resetSelection();
+      await formatting?.flush();
+      formatting?.resetSelection();
       const selection = instance.ui.selection.getSnapshot();
       const target =
         selection.status === "ready" ? selection.selectionTarget : null;
@@ -135,7 +99,7 @@ export default function App() {
           : {}),
       });
       if (!receipt.success) throw new Error(receipt.failure.message);
-      await enforceUnderline();
+      await formatting?.flush();
       setSdtStatus("Block SDT added.");
       await new Promise<void>((resolve) => {
         let unsubscribe = () => {};
@@ -183,8 +147,7 @@ export default function App() {
     exportingRef.current = true;
     setExporting(true);
     try {
-      await reviewController.current?.flush();
-      await enforceUnderline();
+      await formatting?.flush();
       await editorRef.current
         ?.getInstance()
         ?.export({ exportType: ["docx"], exportedName: "sample-edited" });
@@ -212,7 +175,13 @@ export default function App() {
           <div className="demo-actions">
             <button
               className="demo-button demo-button-primary"
-              disabled={!ready || exporting || adding || changingScope}
+              disabled={
+                !ready ||
+                exporting ||
+                adding ||
+                changingScope ||
+                formatting?.isInitializing
+              }
               onClick={() => void exportDocument()}
               type="button"
             >
@@ -233,7 +202,13 @@ export default function App() {
             </button>
             <button
               className="demo-button demo-button-secondary"
-              disabled={!ready || exporting || adding || changingScope}
+              disabled={
+                !ready ||
+                exporting ||
+                adding ||
+                changingScope ||
+                formatting?.isInitializing
+              }
               onMouseDown={(event) => event.preventDefault()}
               onClick={() => void addSdt()}
               type="button"
@@ -270,7 +245,13 @@ export default function App() {
                 <button
                   key={scope}
                   aria-pressed={formattingScope === scope}
-                  disabled={!ready || exporting || adding || changingScope}
+                  disabled={
+                    !ready ||
+                    exporting ||
+                    adding ||
+                    changingScope ||
+                    formatting?.isInitializing
+                  }
                   onMouseDown={(event) => event.preventDefault()}
                   onClick={() => void selectFormattingScope(scope)}
                   type="button"
@@ -305,9 +286,9 @@ export default function App() {
             {sdtError}
           </p>
         )}
-        {underlineError && (
+        {formatting?.error && (
           <p className="demo-message demo-message-error" role="alert">
-            {underlineError}
+            {formatting.error.message}
           </p>
         )}
         {sdtStatus && (
@@ -316,7 +297,11 @@ export default function App() {
           </p>
         )}
       </section>
-      <div className="editor-card">
+      <div
+        className="editor-card"
+        inert={formatting?.isInitializing}
+        aria-busy={formatting?.isInitializing}
+      >
         <SuperDocEditor
           document="/sample.docx"
           documentMode="editing"
@@ -324,7 +309,6 @@ export default function App() {
           onException={reportDocumentError}
           onReady={() => {
             setReady(true);
-            onDocumentUpdate();
           }}
           onEditorUpdate={onDocumentUpdate}
           ref={editorRef}

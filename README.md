@@ -24,6 +24,10 @@ Choose where automatic formatting applies:
 
 In **Format SDTs** and **Format all**, document updates also restore missing underline inside SDTs, including after pasting or removing formatting. The demo applies ordinary document formatting and creates no tracked-change records or review highlights. Export waits for pending edits and formatting checks before writing the DOCX.
 
+## Use the formatting code in your application
+
+The three modes have separate controllers and React hooks: `useSDTFormatting`, `useDocumentFormatting`, and `useDelimitedFormatting`. Copy `src/formatting/` into your application and follow the [integration guide](src/formatting/README.md). The demo's `src/App.tsx` uses the same hooks.
+
 ## Verify it
 
 ```bash
