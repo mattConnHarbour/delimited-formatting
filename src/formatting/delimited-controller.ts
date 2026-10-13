@@ -3,18 +3,23 @@ import {
   readDelimiterRanges,
 } from "./internal/delimiter-ranges";
 import { createController } from "./internal/controller";
-import type { ControllerOptions } from "./types";
+import { resolveDelimiters } from "./internal/delimiters";
+import type { DelimitedControllerOptions } from "./types";
 
 export function createDelimitedFormattingController(
-  options: ControllerOptions,
+  options: DelimitedControllerOptions,
 ) {
+  const delimiters = resolveDelimiters(options.delimiters);
   return createController(options, {
     combinePlainText: true,
     async prepare(doc, target, intent) {
       const story =
         target.story ??
         (target.start.kind === "text" ? target.start.story : undefined);
-      const map = readDelimiterRanges((await doc.get({ in: story })).body);
+      const map = readDelimiterRanges(
+        (await doc.get({ in: story })).body,
+        delimiters,
+      );
       const start = map.offset(target.start);
       const end = map.offset(target.end);
       const parts = map.partition(start, end);
@@ -39,7 +44,7 @@ export function createDelimitedFormattingController(
       const position =
         start + (intent.type === "delete" && intent.backward ? 0 : retained);
       const updated = parts.some((part) => !part.formatted)
-        ? readDelimiterRanges((await doc.get({ in: story })).body)
+        ? readDelimiterRanges((await doc.get({ in: story })).body, delimiters)
         : map;
       const delimiterMap = updated;
       const editCaret = updated.selection(position, position, target);
@@ -69,7 +74,10 @@ export function createDelimitedFormattingController(
                   editCaret.start.offset,
                   intent.text,
                 )
-              : readDelimiterRanges((await doc.get({ in: story })).body);
+              : readDelimiterRanges(
+                  (await doc.get({ in: story })).body,
+                  delimiters,
+                );
           const insertedRanges: Array<{ start: number; end: number }> = [];
           for (const span of spans) {
             const start = map.offset(span.selectionTarget.start);

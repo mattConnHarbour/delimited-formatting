@@ -11,4 +11,7 @@ export type {
   FormattingController,
   FormattingHookOptions,
   FormattingHookResult,
+  FormattingDelimiters,
+  DelimitedControllerOptions,
+  DelimitedFormattingHookOptions,
 } from "./types";

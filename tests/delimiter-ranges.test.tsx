@@ -77,3 +77,55 @@ test("maps UTF-16 offsets across paragraphs", () => {
     ),
   ).toEqual(template);
 });
+
+test("custom delimiters are literal and support nested regions across paragraphs", () => {
+  const delimiters = { open: "[start.*]", close: "[/start.*]" };
+  const map = readDelimiterRanges(
+    body(
+      "before [start.*]a[start.*]b[/start.*]",
+      "c[/start.*] [[format]]default[[/format]]",
+    ),
+    delimiters,
+  );
+  expect(
+    map.regions.map((range) => map.text.slice(range.start, range.end)),
+  ).toEqual(["a", "b", "\nc"]);
+  expect(
+    map.markers.map((range) => map.text.slice(range.start, range.end)),
+  ).toEqual([
+    delimiters.open,
+    delimiters.open,
+    delimiters.close,
+    delimiters.close,
+  ]);
+});
+
+test("chooses the longer delimiter when the opening marker is a prefix of the closing marker", () => {
+  const map = readDelimiterRanges(body("BEGINinsideBEGIN/END"), {
+    open: "BEGIN",
+    close: "BEGIN/END",
+  });
+  expect(
+    map.regions.map((range) => map.text.slice(range.start, range.end)),
+  ).toEqual(["inside"]);
+});
+
+test("fast insertion preserves custom delimiters when a closing marker is completed", () => {
+  const delimiters = { open: "{{", close: "}}" };
+  const map = readDelimiterRanges(body("{{inside}"), delimiters);
+  const updated = insertDelimiterText(map, "p0", map.text.length, "}");
+  const fresh = readDelimiterRanges(body("{{inside}}"), delimiters);
+  expect(updated.delimiters).toEqual(delimiters);
+  expect(updated.regions).toEqual(fresh.regions);
+  expect(updated.markers).toEqual(fresh.markers);
+});
+
+test.each([
+  { open: "", close: "end" },
+  { open: "start", close: "" },
+  { open: "same", close: "same" },
+])("rejects ambiguous or empty delimiter pairs: %j", (delimiters) => {
+  expect(() => readDelimiterRanges(body("text"), delimiters)).toThrow(
+    /delimiters must/,
+  );
+});

@@ -1,10 +1,15 @@
-import type { SelectionTarget } from "../types";
+import type { SelectionTarget, FormattingDelimiters } from "../types";
 import { paragraphText } from "./document-text";
+import { resolveDelimiters, delimiterPattern } from "./delimiters";
 
 type Range = { start: number; end: number };
 type Block = Range & { id: string; text: string };
 
-export function readDelimiterRanges(body: unknown) {
+export function readDelimiterRanges(
+  body: unknown,
+  configuredDelimiters?: FormattingDelimiters,
+) {
+  const delimiters = resolveDelimiters(configuredDelimiters);
   const blocks: Block[] = [];
   function visit(value: unknown) {
     if (!value || typeof value !== "object") return;
@@ -31,11 +36,11 @@ export function readDelimiterRanges(body: unknown) {
   const markers: Range[] = [];
   const pairs: Range[] = [];
   const opens: number[] = [];
-  for (const match of text.matchAll(/\[\[format\]\]|\[\[\/format\]\]/g)) {
+  for (const match of text.matchAll(delimiterPattern(delimiters))) {
     const start = match.index;
     const end = start + match[0].length;
     markers.push({ start, end });
-    if (match[0] === "[[format]]") opens.push(end);
+    if (match[0] === delimiters.open) opens.push(end);
     else {
       const open = opens.pop();
       if (open !== undefined) pairs.push({ start: open, end: start });
@@ -116,6 +121,7 @@ export function readDelimiterRanges(body: unknown) {
   }
 
   return {
+    delimiters,
     blocks,
     text,
     markers,
@@ -153,5 +159,6 @@ export function insertDelimiterText(
         ],
       },
     })),
+    map.delimiters,
   );
 }

@@ -42,6 +42,15 @@ export interface ControllerOptions {
   onSuccess?: () => void;
 }
 
+export interface FormattingDelimiters {
+  readonly open: string;
+  readonly close: string;
+}
+
+export interface DelimitedControllerOptions extends ControllerOptions {
+  delimiters?: FormattingDelimiters;
+}
+
 export interface FormattingController {
   flush(): Promise<void>;
   reconcile(): Promise<void>;
@@ -56,6 +65,10 @@ export interface FormattingHookOptions {
   enabled?: boolean;
   onError?: (error: Error) => void;
   onSuccess?: () => void;
+}
+
+export interface DelimitedFormattingHookOptions extends FormattingHookOptions {
+  delimiters?: FormattingDelimiters;
 }
 
 export interface FormattingHookResult {

@@ -8,8 +8,9 @@ import {
   useDelimitedFormatting,
   createDocumentFormattingController,
   createSDTFormattingController,
-  type FormattingHookOptions,
+  createDelimitedFormattingController,
   type FormattingHookResult,
+  type DelimitedFormattingHookOptions,
 } from "../src/formatting";
 import type {
   SelectionTarget,
@@ -30,6 +31,7 @@ function deferred() {
 }
 
 function fakeEditor() {
+  let text = "";
   let selection: SelectionTarget = {
     kind: "selection",
     start: { kind: "text", blockId: "p1", offset: 0 },
@@ -42,6 +44,10 @@ function fakeEditor() {
       if (target.end.kind !== "text")
         throw new Error("Expected a text target.");
       const end = { ...target.end, offset: target.end.offset + value.length };
+      text =
+        text.slice(0, target.end.offset) +
+        value +
+        text.slice(target.end.offset);
       return {
         success: true,
         effects: {
@@ -52,10 +58,20 @@ function fakeEditor() {
   );
   const format = vi.fn(async () => ({ success: true }));
   const list = vi.fn(async () => ({ items: [], total: 0 }));
+  const current = vi.fn(async () => ({ selectionTarget: selection }));
   const instance = {
     activeEditor: {
       doc: {
-        selection: { current: async () => ({ selectionTarget: selection }) },
+        selection: { current },
+        get: async () => ({
+          body: [
+            {
+              kind: "paragraph",
+              id: "p1",
+              paragraph: { inlines: [{ kind: "run", run: { text } }] },
+            },
+          ],
+        }),
         insert,
         format: { apply: format },
         contentControls: { list },
@@ -75,6 +91,12 @@ function fakeEditor() {
     insert,
     format,
     list,
+    current,
+    setText(value: string, offset: number) {
+      text = value;
+      const point = { kind: "text" as const, blockId: "p1", offset };
+      selection = { kind: "selection", start: point, end: point };
+    },
     hold: (promise: Promise<void>) => {
       hold = promise;
     },
@@ -83,7 +105,7 @@ function fakeEditor() {
 
 async function mountHook(
   hook: typeof useDocumentFormatting,
-  initial: Partial<FormattingHookOptions> = {},
+  initial: Partial<DelimitedFormattingHookOptions> = {},
 ) {
   (
     globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }
@@ -254,4 +276,85 @@ test("controllers prevent duplicate interception and release ownership on destro
   controller.destroy();
   const replacement = createSDTFormattingController(options);
   replacement.destroy();
+});
+
+test("the delimiter controller formats custom regions and ignores default markers", async () => {
+  const element = document.createElement("div");
+  const surface = document.createElement("div");
+  surface.className = "superdoc-layout";
+  element.append(surface);
+  const editor = fakeEditor();
+  const controller = createDelimitedFormattingController({
+    element,
+    getInstance: () => editor.instance,
+    delimiters: { open: "<<", close: ">>" },
+  });
+  try {
+    editor.setText("<<inside>>", 2);
+    surface.dispatchEvent(
+      new KeyboardEvent("keydown", {
+        key: "a",
+        bubbles: true,
+        cancelable: true,
+      }),
+    );
+    await controller.flush();
+    expect(editor.format).toHaveBeenLastCalledWith(
+      expect.objectContaining({ inline: { underline: true, strike: false } }),
+    );
+    controller.resetSelection();
+    editor.setText("[[format]]inside[[/format]]", 10);
+    surface.dispatchEvent(
+      new KeyboardEvent("keydown", {
+        key: "b",
+        bubbles: true,
+        cancelable: true,
+      }),
+    );
+    await controller.flush();
+    expect(editor.format).toHaveBeenLastCalledWith(
+      expect.objectContaining({ inline: { underline: false, strike: false } }),
+    );
+  } finally {
+    controller.destroy();
+  }
+});
+
+test("the delimiter hook preserves its controller for equivalent options and updates when delimiters change", async () => {
+  const customer = await mountHook(useDelimitedFormatting, {
+    delimiters: { open: "<<", close: ">>" },
+  });
+  customer.editor.setText("<<inside>>", 2);
+  await act(async () => {
+    customer.type("a");
+    await customer.result().flush();
+  });
+  expect(customer.editor.format).toHaveBeenLastCalledWith(
+    expect.objectContaining({ inline: { underline: true, strike: false } }),
+  );
+  await customer.render({ delimiters: { open: "<<", close: ">>" } });
+  await act(async () => {
+    customer.type("b");
+    await customer.result().flush();
+  });
+  expect(customer.editor.current).toHaveBeenCalledOnce();
+  await customer.render({ delimiters: { open: "{{", close: "}}" } });
+  customer.editor.setText("<<old>> {{new}}", 10);
+  await act(async () => {
+    customer.type("c");
+    await customer.result().flush();
+  });
+  expect(customer.editor.current).toHaveBeenCalledTimes(2);
+  expect(customer.editor.format).toHaveBeenLastCalledWith(
+    expect.objectContaining({ inline: { underline: true, strike: false } }),
+  );
+  customer.result().resetSelection();
+  customer.editor.setText("<<old>> {{new}}", 2);
+  await act(async () => {
+    customer.type("d");
+    await customer.result().flush();
+  });
+  expect(customer.editor.format).toHaveBeenLastCalledWith(
+    expect.objectContaining({ inline: { underline: false, strike: false } }),
+  );
 });

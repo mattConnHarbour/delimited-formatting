@@ -10,6 +10,34 @@ Copy this entire `formatting/` folder into a React application that uses `@super
 
 Use one enabled hook per editor container. All three hooks accept the same options and return the same methods.
 
+## Custom delimiters
+
+The delimiter controller accepts an optional `delimiters` pair:
+
+```ts
+const controller = createDelimitedFormattingController({
+  element: editorContainer,
+  getInstance: () => superdocInstance,
+  delimiters: { open: "<review>", close: "</review>" },
+});
+```
+
+The React hook exposes the same option:
+
+```tsx
+const formatting = useDelimitedFormatting({
+  editorRef,
+  containerRef,
+  ready,
+  enabled,
+  delimiters: { open: "<review>", close: "</review>" },
+});
+```
+
+Omitting `delimiters` uses `[[format]]` and `[[/format]]`. Both values must be distinct, non-empty strings. Matching is literal and case-sensitive, so characters such as `[` and `*` need no escaping. Nested pairs and regions spanning paragraphs use the configured markers.
+
+The hook updates its controller when either delimiter string changes. An equivalent pair created on each render keeps the existing controller. Await `formatting.flush()` before changing the pair, as when switching modes. Direct controllers capture their pair when created; flush and recreate the controller to change it.
+
 ## React integration
 
 ```tsx
