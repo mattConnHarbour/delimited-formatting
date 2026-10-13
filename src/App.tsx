@@ -38,6 +38,10 @@ export default function App() {
   const delimitedFormatting = useDelimitedFormatting({
     ...options,
     enabled: formattingScope === "delimiters",
+    delimiters: {
+      open: "[[format]]",
+      close: "[[/format]]",
+    },
   });
   const formatting =
     formattingScope === "sdts"
